@@ -43,7 +43,7 @@ recf   = `Rec` file path
 netf   = Target mask file path
 proj   = Output projection in Proj4 format
 fwidth = Source width file path GDAL format
-method = [const_thresh|var_thresh]
+method = [const_thresh|var_thresh|var_intreach]
 fbankfullq  = Source bankfullq shapefile (Optional, to determine variable threshold)
 '''
 
@@ -68,18 +68,21 @@ fbankfullq  = Source bankfullq shapefile (Optional, to determine variable thresh
     method = str(config.get('getwidths', 'method','const_thresh'))
     fbankfullq = str(config.get('getwidths', 'fbankfullq',''))
 
-####################################################################    # If there are more NaN than real values, all values in link are equal to 30
+####################################################################
+# If there are more NaN than real values, all values in link are equal to 30
 # Otherwise, interpolate real values to fill NaNs
 def check_width(a):
     b = a.copy()
     c = b.isnull()
     falses = c.sum()
     trues = c.count() - falses
+	# PFU: dont change downstream point
+	# Instread, there should be a value for the upstream point of the next downstream reach
     if trues >= falses:
-        return a.interpolate(limit_direction='both')
+        b[:-1] = a.interpolate(limit_direction='both')[:-1]
     else:
-        b.loc[:] = 30
-        return b
+        b[:-1] = 30
+    return b
 
 ####################################################################
 #
@@ -93,10 +96,16 @@ def getwidths(recf,netf, proj, fwidth, output,thresh=-1,method = 'const_thresh',
         # E.g. use larger search distance for major rivers
         # Could alternatively use accumulation, or strahler order
         getwidths_varthresh(recf,netf, proj, fwidth, output,fbankfullq)
+    elif method == 'var_intreach':
+        print("    running getwidths.py... variable threshold version, interpolating missing values over reaches instead of links")
+        # use variable threshold, based on fbankfullq (bankfull q)
+        # E.g. use larger search distance for major rivers
+        # Could alternatively use accumulation, or strahler order
+        getwidths_varthresh(recf,netf, proj, fwidth, output,fbankfullq,intReach=True)
 
 ####################################################################
 #
-def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq):
+def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq, intReach=False):
 
 	# Reading XXX_net.tif file
     geo1 = gdalutils.get_geo(netf)
@@ -127,7 +136,7 @@ def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq):
         # come up with minimum width to search for, based on bankfullq
         # This is designed to prevent assigning
         #width values from the tributaries to the major river channels
-        minwidth = bfq/100. + 30
+        minwidth = max(bfq/25., 30)
 
 
         # Get nearest width from datasource
@@ -144,7 +153,7 @@ def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq):
 
         dat, geo = gdalutils.clip_raster(fwidth, xmin, ymin, xmax, ymax)
         try:
-            iy, ix = np.where(dat > 30)
+            iy, ix = np.where(dat > minwidth)
         except:
             print('Error: point',i,x,y)
             print('Vals:',bfq,thresh,dat)
@@ -158,23 +167,30 @@ def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq):
             #width.append(val)
             width[i] = val
         except ValueError:
-            #width.append(30.)
-            continue
-
-	# Add widths to dataframe, then copy to new dataframe
-    #bankfullq['width'] = width
-    #widths = bankfullq[['x', 'y', 'geometry','width']]
+            width[i] = np.nan
 
     rec['width'] = width
     #################################################################
     # Group river network per link
-    rec.loc[:, 'width'] = rec.groupby('link').width.apply(check_width)
+    if not intReach:
+        rec.loc[:, 'width'] = rec.groupby('link').width.apply(check_width)
+    else:
+        rec.loc[:, 'width'] = rec.groupby('reach').width.apply(check_width)
+
+	# Check any points that still are np.nan (downstream boundaries)
+	# Corresponding points from the downstream segment may now have interpolated data
+    nanelements = np.where(rec['width'].isnull())[0]
+    #print('Width Nanelements',len(nanelements))
+    for index in nanelements:
+        # Search for elements with the same lat lon
+        row = rec.loc[index]
+        matchpoints = np.logical_and(rec.loc[:,'lat']==row.lat,rec.loc[:,'lon']==row.lon)
+		# Choose the maximum width 
+        rec.loc[index,'width'] = np.nanmax(rec.loc[matchpoints,'width'])
 
     # Write out files
-    print('Writing out data')
+    #print('Writing out data')
     name1 = output + '.shp'
-    #widths.to_file(name1)
-
     w = shapefile.Writer(shapefile.POINT)
     w.field('x')
     w.field('y')

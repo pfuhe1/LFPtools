@@ -33,7 +33,8 @@ def buildmodel_shell(argv):
     wdttif = str(config.get('buildmodel', 'wdttif')) # input 
     bedtif = str(config.get('buildmodel', 'bedtif')) # input 
     dirtif = str(config.get('buildmodel', 'dirtif')) # input 
-    chantif = config.get('buildmodel', 'chantif',None) # optional input 
+    chantif = config.get('buildmodel', 'chantif',None) # optional input
+    fpmanntif = config.get('buildmodel', 'fpmanntif',None) # optional input
     reccsv = str(config.get('buildmodel', 'reccsv')) # input 
     date1 = str(config.get('buildmodel', 'date1')) # input 
     date2 = str(config.get('buildmodel', 'date2')) # input
@@ -51,12 +52,12 @@ def buildmodel_shell(argv):
 
     buildmodel(parlfp, bcilfp, bdylfp, runcsv, evaplfp, gaugelfp, stagelfp,
                demtif, dembnktif, dembnktif_1D, fixbnktif, wdttif,
-               bedtif, dirtif, reccsv, date1, date2, d8dir=d8dirn,prescribeDirn=prescribeDirn,chantif=chantif)
+               bedtif, dirtif, reccsv, date1, date2, d8dir=d8dirn,prescribeDirn=prescribeDirn,chantif=chantif,fpmanntif=fpmanntif)
 
 
 def buildmodel(parlfp, bcilfp, bdylfp, runcsv, evaplfp, gaugelfp, stagelfp,
                demtif, dembnktif, dembnktif_1D, fixbnktif, wdttif,
-               bedtif, dirtif, reccsv, date1, date2, d8dirn=False,prescribeDirn=False,chantif=None):
+               bedtif, dirtif, reccsv, date1, date2, d8dirn=False,prescribeDirn=False,chantif=None,fpmanntif=None):
 
     print("    running buildmodel.py...")
 
@@ -69,11 +70,11 @@ def buildmodel(parlfp, bcilfp, bdylfp, runcsv, evaplfp, gaugelfp, stagelfp,
     #write_gauge_stage_all_cells(reccsv, dirtif, wdttif, gaugelfp, stagelfp)
     burn_banks_dem(dembnktif, demtif, fixbnktif)
     burn_banks_dem_1D(dembnktif_1D, demtif, fixbnktif)
-    write_ascii(dembnktif_1D, wdttif, bedtif, dembnktif,dirtif,chantif)
+    write_ascii(dembnktif_1D, wdttif, bedtif, dembnktif,dirtif,chantif,fpmanntif)
     if prescribeDirn:
         prescribeDirn = dirtif
     write_par(parlfp, bcilfp, bdylfp, evaplfp, gaugelfp,
-              stagelfp, dembnktif, wdttif, bedtif, t,chantif,d8dirn,prescribeDirn)
+              stagelfp, dembnktif, wdttif, bedtif, t,chantif,d8dirn,prescribeDirn,fpmanntif)
 
 
 def write_gauge_stage_all_cells(reccsv, dirtif, wdttif, gaugelfp, stagelfp):
@@ -195,7 +196,7 @@ def write_bci(bcilfp, runcsv):
         f.write('W -9999 9999 FREE' + '\n')
 
 
-def write_ascii(dembnktif_1D, wdttif, bedtif, dembnktif,dirtif,chantif):
+def write_ascii(dembnktif_1D, wdttif, bedtif, dembnktif,dirtif,chantif,fpmanntif):
 
     print("     writing ASCII files...")
 
@@ -225,6 +226,11 @@ def write_ascii(dembnktif_1D, wdttif, bedtif, dembnktif,dirtif,chantif):
         name2 = chantif
         name3 = os.path.splitext(chantif)[0]+'.asc'
         subprocess.call(["gdal_translate", "-of",fmt2,"-ot",'Int16', name2, name3])
+
+    if fpmanntif is not None:
+        name2 = fpmanntif
+        name3 = os.path.splitext(fpmanntif)[0]+'.asc'
+        subprocess.call(["gdal_translate", "-of",fmt2,"-co","DECIMAL_PRECISION=3", name2, name3])
 
 def burn_banks_dem(dembnktif, demtif, fixbnktif):
 
@@ -268,7 +274,7 @@ def getdirletter(dirval):
     return dirlet
 
 
-def write_par(parlfp, bcilfp, bdylfp, evaplfp, gaugelfp, stagelfp, dembnktif, wdttif, bedtif, t, chantif,d8dirn,dirtif):
+def write_par(parlfp, bcilfp, bdylfp, evaplfp, gaugelfp, stagelfp, dembnktif, wdttif, bedtif, t, chantif,d8dirn,dirtif,fpmanntif):
 
     print("     writing .par file...")
 
@@ -286,7 +292,11 @@ def write_par(parlfp, bcilfp, bdylfp, evaplfp, gaugelfp, stagelfp, dembnktif, wd
         file.write("initial_tstep  " + "10.0" + "\n")
         file.write("massint        " + "86400.0" + "\n")
         file.write("saveint        " + "86400.0" + "\n")
-        file.write("fpfric         " + "0.06" + "\n")
+        if fpmanntif is None:	
+            file.write("fpfric         " + "0.06" + "\n")
+        else:
+            file.write("manningfile    " +
+                   os.path.basename(fpmanntif).split('.')[0] + '.asc' + "\n")
         file.write("SGCn           " + "0.035" + "\n")
         if os.path.isfile(bcilfp):
             file.write("bcifile        " + os.path.basename(bcilfp) + "\n")

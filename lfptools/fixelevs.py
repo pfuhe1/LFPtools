@@ -65,7 +65,7 @@ source = Shapefile input file to fix (e.g from lfp-getbankelevs)
     """
     This function uses the output from streamnet function from
     TauDEM, specifically the "coord" and "tree" files to adjust
-    DEM values from rivers and tributaries for flood using the 
+    DEM values from rivers and tributaries for flood using the
     algorithm bank4flood (1d)
 
     First create a temporary file where some coordinates points
@@ -122,6 +122,8 @@ def fixelevs(source,output,netf,recf,proj,method):
             adjusted_dem = bank4flood(dem)
         elif method == 'lowless':
             adjusted_dem = lowless(dem)
+        elif method == 'both':
+            adjusted_dem = lowless(bank4flood(dem))
         else:
             sys.exit('Method not recognised')
         rec['bnk_adj'][ids] = adjusted_dem
