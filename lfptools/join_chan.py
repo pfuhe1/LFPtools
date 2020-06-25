@@ -95,7 +95,10 @@ def join_chan(output,recf,bankelevf,bankfixf,widthf,slopef,bfqf,depthf,extent):
     rec['depth'] = np.array(shapefile.Reader(depthf).records(), dtype='float')[:,2]
 
     print(rec.head())
-    rec = rec.rename(columns = {'Unnamed: 0':'point'})
+    if 'index' in rec:
+        rec = rec.rename(columns = {'index':'point'})
+    else: # Lowres rec files don't have index in header
+        rec = rec.rename(columns = {'Unnamed: 0':'point'})
     print('rows',len(rec))
     if extent is not None:
         print('Clipping to extent',extent)
