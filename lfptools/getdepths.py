@@ -150,7 +150,7 @@ def getdepths(proj,netf,method,output,**kwargs):
     name1 = output+".shp"
     name2 = output+".tif"
     mygeo = gdalutils.get_geo(netf)
-    subprocess.call(["gdal_rasterize", "-a_nodata", str(nodata), "-of", fmt, "-tr", str(mygeo[6]), str(mygeo[7]),
+    subprocess.call(["gdal_rasterize", "-a_nodata", str(nodata), "-of", fmt, "-tr", str(mygeo[6]), str(mygeo[7]), "-co", "COMPRESS=DEFLATE",
                      "-a", "depth", "-a_srs", proj, "-te", str(mygeo[0]), str(mygeo[1]), str(mygeo[2]), str(mygeo[3]), name1, name2])
 
 

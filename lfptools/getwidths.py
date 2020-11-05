@@ -130,8 +130,8 @@ def getwidths_varthresh(recf,netf, proj, fwidth, output, fbankfullq, intReach=Fa
         x = float(row[1])
         y = float(row[2])
         bfq = max(float(row[3]),1.)
-        # Choose some threshold based on bankfull q (bfq)
-        thresh = np.log(bfq)/1000. + bfq/1000000. + 2*abs(xres) + 2*abs(yres)
+        # Choose some threshold based on bankfull q (trial and error)
+        thresh = np.log(bfq)/2000. + bfq/1000000. + abs(xres) + abs(yres)
 
         # come up with minimum width to search for, based on bankfullq
         # This is designed to prevent assigning

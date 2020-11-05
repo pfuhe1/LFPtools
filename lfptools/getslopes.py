@@ -10,6 +10,8 @@ import subprocess
 import configparser
 import numpy as np
 import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point
 import gdalutils
 from lfptools import shapefile
 from lfptools import misc_utils
@@ -46,6 +48,7 @@ netf = Target mask file path
 recf = `Rec` file path
 proj = Output projection is Proj4 format
 step = steps to count, upstream and downstream
+method = 'elev' (default) or 'taudem' (use slopes calculated by taudem per reach)
 '''
 
     try:
@@ -66,27 +69,52 @@ step = steps to count, upstream and downstream
     recf = str(config.get('getslopes', 'recf'))
     proj = str(config.get('getslopes', 'proj'))
     step = int(config.get('getslopes', 'step'))
+    method = config.get('getslopes', 'method','elev')
+    getslopes(source,output,netf,recf,proj,step,method)
 
-    getslopes(source,output,netf,recf,proj,step)
+# Wrapper function to call either getslopes_elev or getslopes_taudem
+def getslopes(source,output,netf,recf,proj,step,method):
+    if method == 'elev':
+        getslopes_elev(source,output,netf,recf,proj,step)
+    elif method == 'taudem':
+        getslopes_taudem(source,output,netf,recf,proj)
 
-def getslopes(source,output,netf,recf,proj,step):
+def getslopes_taudem(source,output,netf,recf,proj):
+
+    print("    runnning getslopes.py (from taudem)...")
+
+    # Reading XXX_rec.csv file
+    rec = pd.read_csv(recf)
+
+    # Reading streamnet file
+    snet = gpd.read_file(source)
+    print('snet',snet['LINKNO'])
+
+    # Loop over rec items
+    slopes = np.zeros([len(rec.index)])
+    for i in rec.index:
+        link  = rec['link'][i]
+        try:
+            # Match link between streamnet and recf, then extract slope
+            slopes[i] = snet.loc[snet['LINKNO']==link, 'Slope'].values[0]
+        except:
+            raise Exception('Cant match link: '+str(link))
+    # Set minimum slope to be 1e-6
+    slopes[slopes<1.e-6]=1.e-6
+    # Add slope to dataframe
+    rec['slope'] = slopes
+
+    write_output(rec,output,netf,proj)
+
+def getslopes_elev(source,output,netf,recf,proj,step):
 
     print("    runnning getslopes.py...")
 
     # Reading XXX_rec.csv file
     rec = pd.read_csv(recf)
 
-    # Reading XXX_net.tif file
-    geo = gdalutils.get_geo(netf)
-
     # Reading bank file (adjusted bank)
     elev = np.array(shapefile.Reader(source).records(), dtype='float64')
-
-    # Initiate output shapefile
-    w = shapefile.Writer(shapefile.POINT)
-    w.field('x')
-    w.field('y')
-    w.field('slope')
 
     # Retrieving adjusted bank elevations from XXX_bnkfix.shp file
     # Values are stored in rec['bnk']
@@ -99,7 +127,7 @@ def getslopes(source,output,netf,recf,proj,step):
 
     # Calculating slopes
     # coordinates are grouped by REACH number
-    rec['slopes'] = 0
+    rec['slope'] = 0
     recgrp = rec.groupby('reach')
     for reach, df in recgrp:
         ids = df.index
@@ -107,28 +135,9 @@ def getslopes(source,output,netf,recf,proj,step):
         # calc slopes
         slopes_vals = calc_slope_step(
             dem, df['lon'].values, df['lat'].values, step)
-        rec['slopes'][ids] = slopes_vals
+        rec['slope'][ids] = slopes_vals
 
-    # Writing .shp resulting file
-    for i in rec.index:
-        w.point(rec['lon'][i], rec['lat'][i])
-        w.record(rec['lon'][i], rec['lat'][i], rec['slopes'][i])
-    w.save("%s.shp" % output)
-
-    # write .prj file
-    prj = open("%s.prj" % output, "w")
-    srs = osr.SpatialReference()
-    srs.ImportFromProj4(proj)
-    prj.write(srs.ExportToWkt())
-    prj.close()
-
-    # Writing .tif file
-    nodata = -9999
-    fmt = "GTiff"
-    name1 = output+".shp"
-    name2 = output+".tif"
-    subprocess.call(["gdal_rasterize", "-a_nodata", str(nodata), "-of", fmt, "-tr",
-                     str(geo[6]), str(geo[7]), "-a", "slope", "-a_srs", proj, "-te", str(geo[0]), str(geo[1]), str(geo[2]), str(geo[3]), name1, name2])
+    write_output(rec,output,netf,proj)
 
 
 def calc_slope_step(dem, x, y, step):
@@ -140,7 +149,7 @@ def calc_slope_step(dem, x, y, step):
 
     # fit a linear regression by using Scikit learn, other more sophistcated
     # methods can be used to estimate the slope check on Linear regression methods
-    # on Scikit learn website
+    # on Scikit learn .ebsite
 
     for i in range(len(dem)):
 
@@ -198,6 +207,41 @@ def calc_dis_xy(x, y):
         discum = np.cumsum(dis)
     return discum
 
+def write_output(rec,output,netf,proj):
+
+    # Writing .shp resulting file
+    # Initiate output shapefile
+    #w = shapefile.Writer(shapefile.POINT)
+    #w.field('x')
+    #w.field('y')
+    #w.field('slope')
+
+    #for i in rec.index:
+    #    w.point(rec['lon'][i], rec['lat'][i])
+    #    w.record(rec['lon'][i], rec['lat'][i], rec['slopes'][i])
+    #w.save("%s.shp" % output)
+
+    print('Writing out data')
+    df = gpd.GeoDataFrame(rec[['lon','lat','slope']], crs={'init': 'epsg:4326'}, geometry=[
+                                 Point(xy) for xy in zip(rec.lon.astype(float), rec.lat.astype(float))])
+    df.to_file(output+'.shp')
+
+    # write .prj file
+    prj = open("%s.prj" % output, "w")
+    srs = osr.SpatialReference()
+    srs.ImportFromProj4(proj)
+    prj.write(srs.ExportToWkt())
+    prj.close()
+
+    # Writing .tif file
+    # Reading XXX_net.tif file for coordinates
+    geo = gdalutils.get_geo(netf)
+    nodata = -9999
+    fmt = "GTiff"
+    name1 = output+".shp"
+    name2 = output+".tif"
+    subprocess.call(["gdal_rasterize", "-a_nodata", str(nodata), "-of", fmt,  "-co", "COMPRESS=DEFLATE","-tr",
+                     str(geo[6]), str(geo[7]), "-a", "slope", "-a_srs", proj, "-te", str(geo[0]), str(geo[1]), str(geo[2]), str(geo[3]), name1, name2])
 
 if __name__ == '__main__':
     getslopes_shell(sys.argv[1:])

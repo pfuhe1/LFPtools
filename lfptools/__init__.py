@@ -16,6 +16,7 @@ from lfptools import getrunoff
 from lfptools import buildmodel
 from lfptools import getbankfullq
 from lfptools import join_chan
+from lfptools import getsolverchan
 
 fixelevs = fixelevs.fixelevs
 getbankelevs = getbankelevs.getbankelevs
@@ -30,3 +31,4 @@ getrunoff = getrunoff.getrunoff
 buildmodel = buildmodel.buildmodel
 getbankfullq  = getbankfullq.getbankfullq
 join_chan    = join_chan.join_chan
+getsolverchan = getsolverchan.getsolverchan
