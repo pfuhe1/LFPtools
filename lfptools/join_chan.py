@@ -12,10 +12,6 @@ import configparser
 import numpy as np
 import pandas as pd
 from lfptools import shapefile
-from lfptools import misc_utils
-import statsmodels.api as sm
-import gdalutils
-from osgeo import osr
 
 
 def joinchan_shell(argv):
